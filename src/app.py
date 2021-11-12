@@ -92,14 +92,20 @@ def main():
 
 def load_file(file_path):
     index_col = "created_at"
-    return pd.read_csv(file_path, index_col=index_col, converters={index_col: lambda x: date_try_parse(x)})
+    df = pd.read_csv(file_path, index_col=index_col, converters={index_col: lambda x: date_try_parse(x)})
+    return df
 
 
 def date_try_parse(datetime_str):
-    datetime_str = datetime_str.replace('CET', '')
-    datetime_str = datetime_str.replace('CEST', '')
-    datetime_str = datetime_str.rstrip()
-    return datetime.strptime(datetime_str, '%Y-%m-%d %H:%M:%S')
+    datetime_str_parts = datetime_str.split("+")
+    datetime_str, utc_change_str = datetime_str_parts[0], datetime_str_parts[1]
+    utc_change = datetime.strptime(utc_change_str, '%H:%M').time()
+    datetime_fin = datetime.strptime(datetime_str, '%Y-%m-%dT%H:%M:%S')
+
+    # not consider daylight saving time -> all times in UTC +01:00 (winter time)
+    if utc_change.hour > 1:
+        datetime_fin -= timedelta(hours=1)
+    return datetime_fin
 
 
 def get_data_years(df):
@@ -138,7 +144,7 @@ def cleanup_df_column(df, data_key):
         # only for outside temperature
         ser = remove_sunshine(ser)
 
-    return ser
+    return pd.to_numeric(ser)
 
 
 def remove_peaks(ser):
@@ -176,6 +182,7 @@ def remove_sunshine(ser):
     while date_today <= date_end:
         ser_day = ser[str(date_today)]
         if not ser_day.empty:
+            ser_day = pd.to_numeric(ser_day)
             time_of_max_temp = ser_day.idxmax().time()
             if sunshine_min < time_of_max_temp < sunshine_max:
                 # print(f"\t\tSunshine detected at {date_today} {time_of_max_temp}, temperature {ser_day.max()} °C")
