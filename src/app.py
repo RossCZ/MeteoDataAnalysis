@@ -2,8 +2,11 @@ import os
 from datetime import datetime, timedelta, time, date
 import pandas as pd
 import numpy as np
+import yaml
+import requests
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+import matplotlib.dates as mdates
 from matplotlib import dates
 
 
@@ -33,7 +36,11 @@ def get_data_map():
     return data_map
 
 
-def main():
+def get_index_col():
+    return "created_at"
+
+
+def process_csv_data():
     # settings
     split_years = True
     input_file = os.path.join("0_Data", "feeds.csv")
@@ -91,8 +98,7 @@ def main():
 
 
 def load_file(file_path):
-    index_col = "created_at"
-    df = pd.read_csv(file_path, index_col=index_col, converters={index_col: lambda x: date_try_parse(x)})
+    df = pd.read_csv(file_path, index_col=get_index_col(), converters={get_index_col(): lambda x: date_try_parse(x)})
     return df
 
 
@@ -256,6 +262,7 @@ def plot_data(df, name, ylabel, color, out_file=""):
     margin = timedelta(days=0) if len(df) > 1 else timedelta(days=7)
     plt.xlim(df.iloc[0].name - margin, df.iloc[-1].name + margin)
     plt.gca().xaxis.set_major_locator(ticker.MultipleLocator(base=7.0))  # label each 7 days
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
     plt.ylabel(ylabel)
     plt.gca().yaxis.set_major_formatter(ticker.StrMethodFormatter('{x:,.1f}'))
     plt.gca().yaxis.set_minor_locator(ticker.AutoMinorLocator(5))  # minor ticks
@@ -307,6 +314,44 @@ def show_day(df, column_name, day):
     plt.show()
 
 
-if __name__ == "__main__":
-    main()
+def api_read():
+    with open("config.yml", "r") as stream:
+        try:
+            # https://www.mathworks.com/help/thingspeak/readdata.html
+            config = yaml.safe_load(stream)
+            no_results = 300
 
+            query_str = f'''https://api.thingspeak.com/channels/{config["channel_id"]}/feeds.json?api_key={config["read_api_key"]}&results={no_results}&timezone=Europe/Prague'''
+            res = requests.get(query_str)
+            if res.status_code == 200:
+                json_res = res.json()  # channel, feeds
+                feeds = json_res["feeds"]
+
+                # create dataframe from json string
+                df = pd.DataFrame(eval(str(feeds)), dtype=float)
+
+                # fix timestamp and set it as index
+                df[get_index_col()] = df[get_index_col()].apply(date_try_parse)
+                df.set_index(get_index_col(), inplace=True)
+                print(df)
+
+                # visualize
+                dm_key = "field1"
+                dm_value = get_data_map()[dm_key]
+                df_plot = df[dm_key].dropna()
+                plt.figure(figsize=(15, 8))
+                plt.plot(df_plot, color=dm_value[3], marker="o")
+                plt.title(dm_value[1])
+                plt.ylabel(dm_value[2])
+                plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+                plt.xticks(rotation=90)
+                plt.grid()
+                plt.tight_layout()
+                plt.show()
+        except yaml.YAMLError as exc:
+            print(exc)
+
+
+if __name__ == "__main__":
+    # process_csv_data()
+    api_read()
