@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta, time, date
+from datetime import datetime, timedelta, time
 import pandas as pd
 import numpy as np
 import yaml
@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import matplotlib.dates as mdates
 from matplotlib import dates
+import db_helper as db
 
 
 def get_resamples():
@@ -45,7 +46,7 @@ def process_csv_data():
     split_years = True
     input_file = os.path.join("0_Data", "feeds.csv")
     out_root = "0_Output"
-    start_year = 2021
+    start_year = 2019
 
     # create output directory
     if not os.path.exists(out_root):
@@ -87,13 +88,20 @@ def process_csv_data():
             if not os.path.exists(out_folder):
                 os.mkdir(out_folder)
 
+            dfs_final = {}
             for dm_key, dm_value in data_map.items():
                 channel_name = dm_value[1]
                 print(f"\t\t{channel_name}")
                 df = create_final_dataframe(df_year, r_key, dm_key)
+                dfs_final[dm_key] = df
                 out_file = os.path.join(out_folder, channel_name)
                 plot_data(df, channel_name, dm_value[2], dm_value[3], out_file)
                 # break
+
+            if r_key == "D":
+                df_db = db.prepare_df_for_db(dfs_final)
+                db.write_to_db(df_db, year)
+
     print("Finished")
 
 
@@ -137,6 +145,10 @@ def create_final_dataframe(df, resample, data_key):
     df_res["Mean"] = resampled.mean()
     df_res["Min"] = resampled.min()
     df_res["Max"] = resampled.max()
+    df_res["Count"] = resampled.count()
+
+    # minimal resampling is day - use only date part of datetime
+    df_res.index = [inx.date() for inx in df_res.index.tolist()]
 
     return df_res
 
@@ -252,22 +264,23 @@ def plot_data(df, name, ylabel, color, out_file=""):
     plt.subplots_adjust(left=0.05, bottom=0.12, right=0.99, top=0.96)
 
     for i, column in enumerate(df.columns):
-        alpha = 1.0 if i == 0 else 0.3
-        marker = "" if len(df) > 1 else "o"
-        plt.plot(df[column], color=color, alpha=alpha, marker=marker)
+        if column != "Count":
+            alpha = 1.0 if column == "Mean" else 0.3
+            marker = "" if len(df) > 1 else "o"
+            plt.plot(df[column], color=color, alpha=alpha, marker=marker)
 
     plt.title(name)
-    plt.xlabel('Date')
+    plt.xlabel("Date")
     plt.xticks(rotation=90)
     margin = timedelta(days=0) if len(df) > 1 else timedelta(days=7)
     plt.xlim(df.iloc[0].name - margin, df.iloc[-1].name + margin)
     plt.gca().xaxis.set_major_locator(ticker.MultipleLocator(base=7.0))  # label each 7 days
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
     plt.ylabel(ylabel)
-    plt.gca().yaxis.set_major_formatter(ticker.StrMethodFormatter('{x:,.1f}'))
+    plt.gca().yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:,.1f}"))
     plt.gca().yaxis.set_minor_locator(ticker.AutoMinorLocator(5))  # minor ticks
-    plt.grid(which='major', linestyle='-')
-    plt.grid(which='minor', linestyle='--', alpha=0.3)
+    plt.grid(which="major", linestyle="-")
+    plt.grid(which="minor", linestyle="--", alpha=0.3)
     plt.tight_layout()
     if out_file == "":
         plt.show()
@@ -353,5 +366,5 @@ def api_read():
 
 
 if __name__ == "__main__":
-    # process_csv_data()
-    api_read()
+    process_csv_data()
+    # api_read()
