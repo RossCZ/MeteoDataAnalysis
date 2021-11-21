@@ -365,6 +365,48 @@ def api_read():
             print(exc)
 
 
+def validate_std():
+    input_file = os.path.join("0_Data", "feeds.csv")
+    df_main = load_file(input_file)
+
+    years = get_data_years(df_main)
+
+    for year in years:
+        if year != 2019:
+            continue
+
+        df_year = get_year_dataframe(year, df_main)
+
+        for data_key, _ in get_data_map().items():
+            if data_key != "field3":
+                continue
+
+            df = df_year[[data_key]]
+            ser = cleanup_df_column(df, data_key)
+            resampled = ser.resample("D")
+            ser_mean = resampled.mean()
+            ser_count = resampled.count()
+
+            values, weights = ser_mean.to_list(), ser_count.to_list()
+            # weights = [1 for i in ser_count]
+            avg = np.average(values, weights=weights)
+            std = np.sqrt(np.average((values - avg) ** 2, weights=weights))
+
+            print(ser_mean)
+            print(ser_count)
+
+            # https://stackoverflow.com/questions/24984178/different-std-in-pandas-vs-numpy
+            # Note: biased vs. unbiased estimator of std (defaults of numpy and pandas)
+            # Calculated from the original values - base truth
+            print(f"\tMean:   {ser.mean():.3f} (+-{ser.std():.3f}) (+-{np.std(ser):.3f})")
+            # Calculated from daily values, not weighted - not correct
+            print(f"\tMeanR:  {ser_mean.mean():.3f} (+-{np.std(ser_mean.to_list()):.3f}) (+-{ser_mean.std():.3f})")
+            # Calculated from daily values, weighted - avg correct, std not
+            print(f"\tMeanWR: {avg:.3f} (+-{std:.3f})")  # biased estimator (ddof = 0)
+
+
 if __name__ == "__main__":
     process_csv_data()
     # api_read()
+    # validate_std()
+
