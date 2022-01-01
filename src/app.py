@@ -220,7 +220,7 @@ def remove_sunshine(ser):
     return ser
 
 
-def count_sunny_days(ser):
+def count_days_in_series(ser, filter_fn):
     counter = 0
 
     date_today = ser.index[0].date()
@@ -228,13 +228,12 @@ def count_sunny_days(ser):
     while date_today <= date_end:
         ser_day = ser[str(date_today)]
         if not ser_day.empty:
-            title = "Cloudy day"
-            # sunny day is considered when standard deviation of daily temperature is greater than 4 °C
-            if ser_day.std() > 4:
+            if filter_fn(ser_day):
                 counter += 1
-                title = "Sunny day"
+                # print(str(date_today))
 
-            # calibration plot
+            # Calibration plot
+            # title = "Sunny day" if filter_fn(ser_day) else "Cloudy day"
             # title += f" {date_today}: {ser_day.mean():.2f} ({ser_day.std():.2f})"
             # fig, ax = plt.subplots()
             # plt.plot(ser_day.dropna())
@@ -252,6 +251,35 @@ def count_sunny_days(ser):
         date_today += timedelta(days=1)
 
     return counter
+
+
+def count_sunny_days(ser):
+    def sunny_days_counter(ser_day):
+        # sunny day is considered when standard deviation of daily temperature is greater than 4 °C
+        return ser_day.std() > 4
+    res = count_days_in_series(ser, sunny_days_counter)
+    return res
+
+
+def count_freezing_days(ser):
+    def freezing_days_counter(ser_day):
+        return ser_day.max() < 0.0
+    res = count_days_in_series(ser, freezing_days_counter)
+    return res
+
+
+def count_tropic_days(ser):
+    def tropic_days_counter(ser_day):
+        return ser_day.min() > 20.0
+    res = count_days_in_series(ser, tropic_days_counter)
+    return res
+
+
+def count_constant_days(ser):
+    def tropic_days_counter(ser_day):
+        return (ser_day.max() - ser_day.min()) < 2.0
+    res = count_days_in_series(ser, tropic_days_counter)
+    return res
 
 
 def plot_data(df, name, ylabel, color, out_file=""):
@@ -301,6 +329,9 @@ def create_statistics_file(df_year, data_map, year, year_root):
     f.write(f"Total number of entries: {len(df_year)}\n")
     f.write(f"Number of days: {delta.days}\n")
     f.write(f"Number of sunny days: {count_sunny_days(df_year['field3'])}\n")  # use balcony temperature with direct sunshine
+    f.write(f"Number of freezing days (Tmax < 0 °C): {count_freezing_days(df_year['field1'])}\n")
+    f.write(f"Number of tropic days (Tmin > 20 °C): {count_tropic_days(df_year['field1'])}\n")
+    f.write(f"Number of constant days (Tspan < 2 °C): {count_constant_days(df_year['field1'])}\n")
 
     for dm_key, dm_value in data_map.items():
         ser = cleanup_df_column(df_year, dm_key)
