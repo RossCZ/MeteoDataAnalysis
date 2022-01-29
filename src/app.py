@@ -24,7 +24,7 @@ class GeneralSettings:
 @dataclass
 class ResampleSettings:
     label: str
-    xticks_distance: int
+    xticks_format: object
 
 
 @dataclass
@@ -37,9 +37,9 @@ class ChannelSettings:
 def get_default_resamples():
     resamples = {
         "D": ResampleSettings("Daily", 7),
-        "W": ResampleSettings("Weekly", 7),
-        "M": ResampleSettings("Monthly", 30),
-        "Y": ResampleSettings("Yearly", 365)
+        "W": ResampleSettings("Weekly", "W"),
+        "M": ResampleSettings("Monthly", "M"),
+        "Y": ResampleSettings("Yearly", "Y")
     }
     return resamples
 
@@ -107,10 +107,10 @@ def process_csv_data(settings: GeneralSettings, resamples: dict[str, ResampleSet
             if not os.path.exists(out_folder):
                 os.mkdir(out_folder)
 
-            # measurement counts plot
+            # counts plot
             print("\t\tCounts")
             df_counts = create_counts_dataframe(df_year, r_key)
-            plot_data(df_counts, "Counts", "Measurments [-]", "green", r_settings.xticks_distance, os.path.join(out_folder, "Counts"))
+            plot_data(df_counts, "Counts", "Measurments [-]", "green", r_settings.xticks_format, os.path.join(out_folder, "Counts"))
 
             # channels plot
             dfs_final = {}
@@ -119,7 +119,7 @@ def process_csv_data(settings: GeneralSettings, resamples: dict[str, ResampleSet
                 out_file = os.path.join(out_folder, ch_settings.channel_name)
                 df = create_final_dataframe(df_year, r_key, ch_key)
                 dfs_final[ch_key] = df
-                plot_data(df, ch_settings.channel_name, ch_settings.yaxis_label, ch_settings.color, r_settings.xticks_distance, out_file)
+                plot_data(df, ch_settings.channel_name, ch_settings.yaxis_label, ch_settings.color, r_settings.xticks_format, out_file)
                 # break
 
             # save daily dataframes to the DB
@@ -304,7 +304,7 @@ def count_constant_days(ser):
     return count_days_in_series(ser, lambda ser_day: (ser_day.max() - ser_day.min()) < 2.0)
 
 
-def plot_data(df, name, ylabel, color, xticks_distance, out_file=""):
+def plot_data(df, name, ylabel, color, xticks_format, out_file=""):
     # print settings
     dpi = 100
     width = 1920 / dpi
@@ -324,8 +324,23 @@ def plot_data(df, name, ylabel, color, xticks_distance, out_file=""):
     plt.xticks(rotation=90)
     margin = timedelta(days=0) if len(df) > 1 else timedelta(days=7)
     plt.xlim(df.iloc[0].name - margin, df.iloc[-1].name + margin)
-    plt.gca().xaxis.set_major_locator(ticker.MultipleLocator(base=xticks_distance))  # label each N days
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+
+    if type(xticks_format) == int:
+        plt.gca().xaxis.set_major_locator(ticker.MultipleLocator(base=xticks_format))  # label each N days
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+    elif type(xticks_format) == str:
+        plt.xticks(df.index)  # use index dates as ticks
+        if xticks_format == "W":
+            plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+        elif xticks_format == "M":
+            plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%m/%Y"))
+        elif xticks_format == "Y":
+            plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+        else:
+            raise NotImplementedError()
+    else:
+        raise NotImplementedError()
+
     plt.ylabel(ylabel)
     plt.gca().yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.1f}"))
     plt.gca().yaxis.set_minor_locator(ticker.AutoMinorLocator(5))  # minor ticks
@@ -466,13 +481,13 @@ def filter_dict(dict, keys):
 
 
 if __name__ == "__main__":
-    # daily, weekly, monthly resample
+    # yearly: daily, weekly, monthly aggregation
     settings = GeneralSettings(True, os.path.join("0_Data", "feeds.csv"), "0_Output", 2019)
     process_csv_data(settings, filter_dict(get_default_resamples(), ["D", "W", "M"]))
 
-    # yearly resample
+    # all: monthly, yearly aggregation
     settings.split_years = False
-    process_csv_data(settings, filter_dict(get_default_resamples(), ["Y"]))
+    process_csv_data(settings, filter_dict(get_default_resamples(), ["M", "Y"]))
 
     # other
     # api_read()
