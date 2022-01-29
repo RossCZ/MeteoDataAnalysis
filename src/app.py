@@ -9,95 +9,120 @@ import matplotlib.ticker as ticker
 import matplotlib.dates as mdates
 from matplotlib import dates
 import db_helper as db
+from dataclasses import dataclass
 
 
-def get_resamples():
+@dataclass
+class GeneralSettings:
+    """Class to hold general data processing settings"""
+    split_years: bool
+    input_file: str
+    out_root: str
+    start_year: int
+
+
+@dataclass
+class ResampleSettings:
+    label: str
+    xticks_distance: int
+
+
+@dataclass
+class ChannelSettings:
+    channel_name: str
+    yaxis_label: str
+    color: str
+
+
+def get_default_resamples():
     resamples = {
-        "D": "Daily",
-        "W": "Weekly",
-        "M": "Monthly"
+        "D": ResampleSettings("Daily", 7),
+        "W": ResampleSettings("Weekly", 7),
+        "M": ResampleSettings("Monthly", 30),
+        "Y": ResampleSettings("Yearly", 365)
     }
     return resamples
 
 
-def get_data_map():
+def get_channel_map():
     temperature_label = "Temperature [°C]"
     humidity_label = "Humidity [%]"
     pressure_label = "Pressure [Pa]"
 
-    data_map = {
-        "field1": (2, "Temperature out", temperature_label, "red"),
-        "field2": (3, "Air pressure", pressure_label, "magenta"),
-        "field3": (4, "Temperature balcony", temperature_label, "red"),
-        "field4": (5, "Temperature living room", temperature_label, "red"),
-        "field5": (6, "Temperature bedroom", temperature_label, "red"),
-        "field6": (7, "Humidity living room", humidity_label, "blue"),
-        "field7": (8, "Humidity bedroom", humidity_label, "blue"),
+    channel_map = {
+        "field1": ChannelSettings("Temperature out", temperature_label, "red"),
+        "field2": ChannelSettings("Air pressure", pressure_label, "magenta"),
+        "field3": ChannelSettings("Temperature balcony", temperature_label, "red"),
+        "field4": ChannelSettings("Temperature living room", temperature_label, "red"),
+        "field5": ChannelSettings("Temperature bedroom", temperature_label, "red"),
+        "field6": ChannelSettings("Humidity living room", humidity_label, "blue"),
+        "field7": ChannelSettings("Humidity bedroom", humidity_label, "blue"),
     }
-    return data_map
+    return channel_map
 
 
 def get_index_col():
     return "created_at"
 
 
-def process_csv_data():
-    # settings
-    split_years = True
-    input_file = os.path.join("0_Data", "feeds.csv")
-    out_root = "0_Output"
-    start_year = 2019
-
+def process_csv_data(settings: GeneralSettings, resamples: dict[str, ResampleSettings]):
+    """Main method for processing measured data"""
     # create output directory
-    if not os.path.exists(out_root):
-        os.mkdir(out_root)
+    if not os.path.exists(settings.out_root):
+        os.mkdir(settings.out_root)
 
     # load file once
-    df_main = load_file(input_file)
+    df_main = load_file(settings.input_file)
 
     # show_day(df_main, "field1", date(year=2020, month=6, day=14))
     # return
 
     # split graphs into years (year None = all years together)
     years = [None]
-    if split_years:
+    if settings.split_years:
         years = get_data_years(df_main)
 
-    data_map = get_data_map()
+    channel_map = get_channel_map()
 
     # process data
     print("Processing data...")
     for year in years:
-        if year < start_year:
+        if year is not None and year < settings.start_year:
             continue
 
         print(f"Year {year}")
-        year_root = out_root
+        year_root = settings.out_root
         if year is not None:
-            year_root = os.path.join(out_root, str(year))
+            year_root = os.path.join(settings.out_root, str(year))
             if not os.path.exists(year_root):
                 os.mkdir(year_root)
 
         df_year = get_year_dataframe(year, df_main)
-        create_statistics_file(df_year, data_map, year, year_root)
+        create_statistics_file(df_year, channel_map, year, year_root)
 
         # create and plot data for each channel and each resample range separately
-        for r_key, r_value in get_resamples().items():
-            print(f"\t{r_value}")
-            out_folder = os.path.join(year_root, r_value)
+        for r_key, r_settings in resamples.items():
+            print(f"\t{r_settings.label}")
+            out_folder = os.path.join(year_root, r_settings.label)
             if not os.path.exists(out_folder):
                 os.mkdir(out_folder)
 
+            # measurement counts plot
+            print("\t\tCounts")
+            df_counts = create_counts_dataframe(df_year, r_key)
+            plot_data(df_counts, "Counts", "Measurments [-]", "green", r_settings.xticks_distance, os.path.join(out_folder, "Counts"))
+
+            # channels plot
             dfs_final = {}
-            for dm_key, dm_value in data_map.items():
-                channel_name = dm_value[1]
-                print(f"\t\t{channel_name}")
-                df = create_final_dataframe(df_year, r_key, dm_key)
-                dfs_final[dm_key] = df
-                out_file = os.path.join(out_folder, channel_name)
-                plot_data(df, channel_name, dm_value[2], dm_value[3], out_file)
+            for ch_key, ch_settings in channel_map.items():
+                print(f"\t\t{ch_settings.channel_name}")
+                out_file = os.path.join(out_folder, ch_settings.channel_name)
+                df = create_final_dataframe(df_year, r_key, ch_key)
+                dfs_final[ch_key] = df
+                plot_data(df, ch_settings.channel_name, ch_settings.yaxis_label, ch_settings.color, r_settings.xticks_distance, out_file)
                 # break
 
+            # save daily dataframes to the DB
             if r_key == "D":
                 df_db = db.prepare_df_for_db(dfs_final)
                 db.write_to_db(df_db, year)
@@ -133,6 +158,15 @@ def get_year_dataframe(year, df):
         return df[f"{year}-1-1":f"{year}-12-31"]
     else:
         return df
+
+
+def create_counts_dataframe(df, resample):
+    df = df.resample(resample)
+
+    df_res = pd.DataFrame()
+    df_res["Counts"] = df["field5"].count()  # bedroom
+    df_res["Counts"] += df["field4"].count()  # living room
+    return df_res
 
 
 def create_final_dataframe(df, resample, data_key):
@@ -254,35 +288,23 @@ def count_days_in_series(ser, filter_fn):
 
 
 def count_sunny_days(ser):
-    def sunny_days_counter(ser_day):
-        # sunny day is considered when standard deviation of daily temperature is greater than 4 °C
-        return ser_day.std() > 4
-    res = count_days_in_series(ser, sunny_days_counter)
-    return res
+    # sunny day is considered when standard deviation of daily temperature is greater than 4 °C
+    return count_days_in_series(ser, lambda ser_day: ser_day.std() > 4)
 
 
 def count_freezing_days(ser):
-    def freezing_days_counter(ser_day):
-        return ser_day.max() < 0.0
-    res = count_days_in_series(ser, freezing_days_counter)
-    return res
+    return count_days_in_series(ser, lambda ser_day: ser_day.max() < 0.0)
 
 
 def count_tropic_days(ser):
-    def tropic_days_counter(ser_day):
-        return ser_day.min() > 20.0
-    res = count_days_in_series(ser, tropic_days_counter)
-    return res
+    return count_days_in_series(ser, lambda ser_day: ser_day.min() > 20.0)
 
 
 def count_constant_days(ser):
-    def tropic_days_counter(ser_day):
-        return (ser_day.max() - ser_day.min()) < 2.0
-    res = count_days_in_series(ser, tropic_days_counter)
-    return res
+    return count_days_in_series(ser, lambda ser_day: (ser_day.max() - ser_day.min()) < 2.0)
 
 
-def plot_data(df, name, ylabel, color, out_file=""):
+def plot_data(df, name, ylabel, color, xticks_distance, out_file=""):
     # print settings
     dpi = 100
     width = 1920 / dpi
@@ -293,7 +315,7 @@ def plot_data(df, name, ylabel, color, out_file=""):
 
     for i, column in enumerate(df.columns):
         if column != "Count":
-            alpha = 1.0 if column == "Mean" else 0.3
+            alpha = 1.0 if column == "Mean" or column == "Counts" else 0.3
             marker = "" if len(df) > 1 else "o"
             plt.plot(df[column], color=color, alpha=alpha, marker=marker)
 
@@ -302,10 +324,10 @@ def plot_data(df, name, ylabel, color, out_file=""):
     plt.xticks(rotation=90)
     margin = timedelta(days=0) if len(df) > 1 else timedelta(days=7)
     plt.xlim(df.iloc[0].name - margin, df.iloc[-1].name + margin)
-    plt.gca().xaxis.set_major_locator(ticker.MultipleLocator(base=7.0))  # label each 7 days
+    plt.gca().xaxis.set_major_locator(ticker.MultipleLocator(base=xticks_distance))  # label each N days
     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
     plt.ylabel(ylabel)
-    plt.gca().yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:,.1f}"))
+    plt.gca().yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.1f}"))
     plt.gca().yaxis.set_minor_locator(ticker.AutoMinorLocator(5))  # minor ticks
     plt.grid(which="major", linestyle="-")
     plt.grid(which="minor", linestyle="--", alpha=0.3)
@@ -317,7 +339,7 @@ def plot_data(df, name, ylabel, color, out_file=""):
     plt.close()
 
 
-def create_statistics_file(df_year, data_map, year, year_root):
+def create_statistics_file(df_year, channel_map, year, year_root):
     f = open(os.path.join(year_root, "statistics.txt"), "w")
     year_name = "All" if year is None else str(year)
     start_date = df_year.iloc[0].name
@@ -326,16 +348,19 @@ def create_statistics_file(df_year, data_map, year, year_root):
 
     f.write(f"Statistics for year: {year_name}\n\n")
     f.write(f"from {start_date} to {end_date}\n")
-    f.write(f"Total number of entries: {len(df_year)}\n")
+    timespan = (end_date - start_date)
+    values_per_hour = 2 * 60/10  # 2 stations, measurements per 10 minutes
+    ratio = 100 * len(df_year) / ((timespan.days * 24 + timespan.seconds / 3600) * values_per_hour)
+    f.write(f"Total number of entries: {len(df_year)} ({ratio:.1f} %)\n")
     f.write(f"Number of days: {delta.days}\n")
     f.write(f"Number of sunny days: {count_sunny_days(df_year['field3'])}\n")  # use balcony temperature with direct sunshine
     f.write(f"Number of freezing days (Tmax < 0 °C): {count_freezing_days(df_year['field1'])}\n")
     f.write(f"Number of tropic days (Tmin > 20 °C): {count_tropic_days(df_year['field1'])}\n")
     f.write(f"Number of constant days (Tspan < 2 °C): {count_constant_days(df_year['field1'])}\n")
 
-    for dm_key, dm_value in data_map.items():
-        ser = cleanup_df_column(df_year, dm_key)
-        f.write(f"\n{dm_value[1]} ({dm_value[2]})\n")
+    for ch_key, ch_settings in channel_map.items():
+        ser = cleanup_df_column(df_year, ch_key)
+        f.write(f"\n{ch_settings.channel_name} ({ch_settings.yaxis_label})\n")
         f.write(f"\tEntries: {ser.count()}\n")
         f.write(f"\tMean: {ser.mean():.1f} (+-{ser.std():.1f})\n")
         f.write(f"\tMin:  {ser.min()}\t({ser.idxmin()})\n")
@@ -380,13 +405,13 @@ def api_read():
                 print(df)
 
                 # visualize
-                dm_key = "field1"
-                dm_value = get_data_map()[dm_key]
-                df_plot = df[dm_key].dropna()
+                ch_key = "field1"
+                ch_settings = get_channel_map()[ch_key]
+                df_plot = df[ch_key].dropna()
                 plt.figure(figsize=(15, 8))
-                plt.plot(df_plot, color=dm_value[3], marker="o")
-                plt.title(dm_value[1])
-                plt.ylabel(dm_value[2])
+                plt.plot(df_plot, color=ch_settings.color, marker="o")
+                plt.title(ch_settings.channel_name)
+                plt.ylabel(ch_settings.yaxis_label)
                 plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
                 plt.xticks(rotation=90)
                 plt.grid()
@@ -408,7 +433,7 @@ def validate_std():
 
         df_year = get_year_dataframe(year, df_main)
 
-        for data_key, _ in get_data_map().items():
+        for data_key, _ in get_channel_map().items():
             if data_key != "field3":
                 continue
 
@@ -436,8 +461,20 @@ def validate_std():
             print(f"\tMeanWR: {avg:.3f} (+-{std:.3f})")  # biased estimator (ddof = 0)
 
 
+def filter_dict(dict, keys):
+    return {key: dict[key] for key in keys}
+
+
 if __name__ == "__main__":
-    process_csv_data()
+    # daily, weekly, monthly resample
+    settings = GeneralSettings(True, os.path.join("0_Data", "feeds.csv"), "0_Output", 2019)
+    process_csv_data(settings, filter_dict(get_default_resamples(), ["D", "W", "M"]))
+
+    # yearly resample
+    settings.split_years = False
+    process_csv_data(settings, filter_dict(get_default_resamples(), ["Y"]))
+
+    # other
     # api_read()
     # validate_std()
 
