@@ -480,16 +480,46 @@ def filter_dict(dict, keys):
     return {key: dict[key] for key in keys}
 
 
+def data_exploration_1():
+    data_file = os.path.join("0_Data", "feeds.csv")
+    date_start, date_end = "2021-06-09", "2021-06-24"
+    out_ch, in_ch = "field1", "field4"
+    resample = "H"
+
+    df = load_file(data_file)
+    df = df[date_start:date_end]
+    ser_out = cleanup_df_column(df, out_ch).resample(resample).mean()
+    ser_in = cleanup_df_column(df, in_ch).resample(resample).mean()
+
+    channel_map = get_channel_map()
+
+    plt.figure(figsize=(15, 8))
+    plt.plot(ser_out, label=channel_map[out_ch].channel_name, color="red")
+    plt.plot(ser_in, label=channel_map[in_ch].channel_name, color="blue")
+    plt.xlabel("Date")
+    plt.xlim(pd.to_datetime(date_start), pd.to_datetime(date_end) + pd.Timedelta(1, "d"))
+    plt.xticks(rotation=90)
+    plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=1))
+    plt.ylabel(channel_map[out_ch].yaxis_label)
+    plt.yticks(np.arange(8, 35, 1.0))
+    plt.legend()
+    plt.grid()
+    plt.tight_layout()
+    plt.show()
+
+
 if __name__ == "__main__":
-    # yearly: daily, weekly, monthly aggregation
-    settings = GeneralSettings(True, os.path.join("0_Data", "feeds.csv"), "0_Output", 2019)
-    process_csv_data(settings, filter_dict(get_default_resamples(), ["D", "W", "M"]))
+    # # yearly: daily, weekly, monthly aggregation
+    # settings = GeneralSettings(True, os.path.join("0_Data", "feeds.csv"), "0_Output", 2019)
+    # process_csv_data(settings, filter_dict(get_default_resamples(), ["D", "W", "M"]))
 
-    # all: monthly, yearly aggregation
-    settings.split_years = False
-    process_csv_data(settings, filter_dict(get_default_resamples(), ["M", "Y"]))
+    # # all: monthly, yearly aggregation
+    # settings.split_years = False
+    # process_csv_data(settings, filter_dict(get_default_resamples(), ["M", "Y"]))
 
-    # other
+    # other experiments
     # api_read()
     # validate_std()
+    data_exploration_1()
+
 
