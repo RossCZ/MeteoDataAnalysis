@@ -224,9 +224,11 @@ def remove_peaks(ser):
 
 
 def remove_sunshine(ser):
-    # empirically known sunshine hours in summer for outside sensor
+    # empirically known sunshine hours in summer (3-9 months) for outside sensor
     sunshine_min = time(hour=5, minute=0, second=0)
     sunshine_max = time(hour=9, minute=0, second=0)
+    sunshine_month_start = 3
+    sunshine_month_end = 9
 
     # assess every day for max temperature within sunshine hours
     date_today = ser.index[0].date()
@@ -235,8 +237,12 @@ def remove_sunshine(ser):
         ser_day = ser[str(date_today)]
         if not ser_day.empty:
             ser_day = pd.to_numeric(ser_day)
-            time_of_max_temp = ser_day.idxmax().time()
-            if sunshine_min < time_of_max_temp < sunshine_max:
+            datetime_of_max_temp = ser_day.idxmax()
+            time_of_max_temp = datetime_of_max_temp.time()
+            month_of_max_temp = datetime_of_max_temp.date().month
+
+            # remove sunshine peak only in valid month and time ranges
+            if (sunshine_month_start <= month_of_max_temp <= sunshine_month_end) and (sunshine_min < time_of_max_temp < sunshine_max):
                 # print(f"\t\tSunshine detected at {date_today} {time_of_max_temp}, temperature {ser_day.max()} °C")
 
                 timestamp_start = str(datetime.combine(date_today, sunshine_min))
@@ -331,7 +337,11 @@ def plot_data(df, name, ylabel, color, xticks_format, out_file=""):
     elif type(xticks_format) == str:
         plt.xticks(df.index)  # use index dates as ticks
         if xticks_format == "W":
-            plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+            if len(df) < 100:
+                plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+            else:  # use month formatter for large number of weeks
+                plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
+                plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%m/%Y"))
         elif xticks_format == "M":
             plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%m/%Y"))
         elif xticks_format == "Y":
@@ -483,19 +493,21 @@ def filter_dict(dict, keys):
 def data_exploration_1():
     data_file = os.path.join("0_Data", "feeds.csv")
     date_start, date_end = "2021-06-09", "2021-06-24"
-    out_ch, in_ch = "field1", "field4"
+    out_ch, in_ch, in_ch_b = "field1", "field4", "field5"
     resample = "H"
 
     df = load_file(data_file)
     df = df[date_start:date_end]
     ser_out = cleanup_df_column(df, out_ch).resample(resample).mean()
     ser_in = cleanup_df_column(df, in_ch).resample(resample).mean()
+    ser_in_b = cleanup_df_column(df, in_ch_b).resample(resample).mean()
 
     channel_map = get_channel_map()
 
     plt.figure(figsize=(15, 8))
     plt.plot(ser_out, label=channel_map[out_ch].channel_name, color="red")
     plt.plot(ser_in, label=channel_map[in_ch].channel_name, color="blue")
+    plt.plot(ser_in_b, label=channel_map[in_ch_b].channel_name, color="green")
     plt.xlabel("Date")
     plt.xlim(pd.to_datetime(date_start), pd.to_datetime(date_end) + pd.Timedelta(1, "d"))
     plt.xticks(rotation=90)
@@ -510,16 +522,16 @@ def data_exploration_1():
 
 if __name__ == "__main__":
     # # yearly: daily, weekly, monthly aggregation
-    # settings = GeneralSettings(True, os.path.join("0_Data", "feeds.csv"), "0_Output", 2019)
-    # process_csv_data(settings, filter_dict(get_default_resamples(), ["D", "W", "M"]))
+    settings = GeneralSettings(True, os.path.join("0_Data", "feeds.csv"), "0_Output", 2019)
+    process_csv_data(settings, filter_dict(get_default_resamples(), ["D", "W", "M"]))
 
-    # # all: monthly, yearly aggregation
-    # settings.split_years = False
-    # process_csv_data(settings, filter_dict(get_default_resamples(), ["M", "Y"]))
+    # # all: weekly, monthly, yearly aggregation
+    settings.split_years = False
+    process_csv_data(settings, filter_dict(get_default_resamples(), ["W", "M", "Y"]))
 
     # other experiments
     # api_read()
     # validate_std()
-    data_exploration_1()
+    # data_exploration_1()
 
 
