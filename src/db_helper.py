@@ -14,11 +14,11 @@ def prepare_df_for_db(dfs_final):
     return df_db
 
 
-def write_to_db(df, year):
+def write_to_db(df, year, out_file):
     table_name = f"year_{year}"
 
     # Create a database or connect to one
-    conn = sqlite3.connect("yearly_data.db")
+    conn = sqlite3.connect(out_file)
 
     # Create cursor
     c = conn.cursor()

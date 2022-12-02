@@ -2,14 +2,12 @@ import os
 from datetime import datetime, timedelta, time
 import pandas as pd
 import numpy as np
-import yaml
-import requests
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import matplotlib.dates as mdates
-from matplotlib import dates
 import db_helper as db
 from dataclasses import dataclass
+import other_experiments as exp
 
 
 @dataclass
@@ -19,6 +17,8 @@ class GeneralSettings:
     input_file: str
     out_root: str
     start_year: int
+    db_out_file: str
+    is_air: bool = False
 
 
 @dataclass
@@ -34,38 +34,44 @@ class ChannelSettings:
     color: str
 
 
-def get_default_resamples():
-    resamples = {
+DEFAULT_RESAMPLES = {
         "D": ResampleSettings("Daily", 7),
         "W": ResampleSettings("Weekly", "W"),
         "M": ResampleSettings("Monthly", "M"),
         "Y": ResampleSettings("Yearly", "Y")
     }
-    return resamples
+
+INDEX_COL = "created_at"
+
+LABELS = {
+    "T": "Temperature [°C]",
+    "H": "Humidity [%]",
+    "P": "Pressure [Pa]",
+    "PM": "µg/m^3",
+}
+
+CHANNEL_MAP_METEO = {
+    "field1": ChannelSettings("Temperature out", LABELS["T"], "red"),
+    "field2": ChannelSettings("Air pressure", LABELS["P"], "magenta"),
+    "field3": ChannelSettings("Temperature balcony", LABELS["T"], "red"),
+    "field4": ChannelSettings("Temperature living room", LABELS["T"], "red"),
+    "field5": ChannelSettings("Temperature bedroom", LABELS["T"], "red"),
+    "field6": ChannelSettings("Humidity living room", LABELS["H"], "blue"),
+    "field7": ChannelSettings("Humidity bedroom", LABELS["H"], "blue"),
+}
+
+CHANNEL_MAP_AIR = {
+    "field1": ChannelSettings("BrnL PM10", LABELS["PM"], "red"),
+    "field2": ChannelSettings("BrnL PM2_5", LABELS["PM"], "red"),
+    "field3": ChannelSettings("BrnA PM10", LABELS["PM"], "red"),
+    "field4": ChannelSettings("BrnA PM2_5", LABELS["PM"], "red"),
+    "field5": ChannelSettings("Ost PM10", LABELS["PM"], "blue"),
+    "field6": ChannelSettings("Ost PM2_5", LABELS["PM"], "blue"),
+    "field7": ChannelSettings("Jes PM10", LABELS["PM"], "green"),
+}
 
 
-def get_channel_map():
-    temperature_label = "Temperature [°C]"
-    humidity_label = "Humidity [%]"
-    pressure_label = "Pressure [Pa]"
-
-    channel_map = {
-        "field1": ChannelSettings("Temperature out", temperature_label, "red"),
-        "field2": ChannelSettings("Air pressure", pressure_label, "magenta"),
-        "field3": ChannelSettings("Temperature balcony", temperature_label, "red"),
-        "field4": ChannelSettings("Temperature living room", temperature_label, "red"),
-        "field5": ChannelSettings("Temperature bedroom", temperature_label, "red"),
-        "field6": ChannelSettings("Humidity living room", humidity_label, "blue"),
-        "field7": ChannelSettings("Humidity bedroom", humidity_label, "blue"),
-    }
-    return channel_map
-
-
-def get_index_col():
-    return "created_at"
-
-
-def process_csv_data(settings: GeneralSettings, resamples: dict[str, ResampleSettings]):
+def process_csv_data(channel_map: dict[str, ChannelSettings], settings: GeneralSettings, resamples: dict[str, ResampleSettings]):
     """Main method for processing measured data"""
     # create output directory
     if not os.path.exists(settings.out_root):
@@ -74,15 +80,10 @@ def process_csv_data(settings: GeneralSettings, resamples: dict[str, ResampleSet
     # load file once
     df_main = load_file(settings.input_file)
 
-    # show_day(df_main, "field1", date(year=2020, month=6, day=14))
-    # return
-
     # split graphs into years (year None = all years together)
     years = [None]
     if settings.split_years:
         years = get_data_years(df_main)
-
-    channel_map = get_channel_map()
 
     # process data
     print("Processing data...")
@@ -98,7 +99,7 @@ def process_csv_data(settings: GeneralSettings, resamples: dict[str, ResampleSet
                 os.mkdir(year_root)
 
         df_year = get_year_dataframe(year, df_main)
-        create_statistics_file(df_year, channel_map, year, year_root)
+        create_statistics_file(df_year, channel_map, year, year_root, settings)
 
         # create and plot data for each channel and each resample range separately
         for r_key, r_settings in resamples.items():
@@ -109,37 +110,41 @@ def process_csv_data(settings: GeneralSettings, resamples: dict[str, ResampleSet
 
             # counts plot
             print("\t\tCounts")
-            df_counts = create_counts_dataframe(df_year, r_key)
-            plot_data(df_counts, "Counts", "Measurments [-]", "green", r_settings.xticks_format, os.path.join(out_folder, "Counts"))
+            df_counts = create_counts_dataframe(df_year, r_key, settings)
+            plot_data(df_counts, "Counts", "Measurements [-]", "green", r_settings.xticks_format, os.path.join(out_folder, "Counts"))
 
             # channels plot
             dfs_final = {}
             for ch_key, ch_settings in channel_map.items():
                 print(f"\t\t{ch_settings.channel_name}")
                 out_file = os.path.join(out_folder, ch_settings.channel_name)
-                df = create_final_dataframe(df_year, r_key, ch_key)
+                df = create_final_dataframe(df_year, r_key, ch_key, settings)
                 dfs_final[ch_key] = df
                 plot_data(df, ch_settings.channel_name, ch_settings.yaxis_label, ch_settings.color, r_settings.xticks_format, out_file)
                 # break
 
             # save daily dataframes to the DB
-            if r_key == "D":
+            if settings.db_out_file and r_key == "D":
                 df_db = db.prepare_df_for_db(dfs_final)
-                db.write_to_db(df_db, year)
+                db.write_to_db(df_db, year, settings.db_out_file)
 
     print("Finished")
 
 
 def load_file(file_path):
-    df = pd.read_csv(file_path, index_col=get_index_col(), converters={get_index_col(): lambda x: date_try_parse(x)})
+    df = pd.read_csv(file_path, index_col=INDEX_COL, converters={INDEX_COL: lambda x: date_try_parse(x)})
     return df
+
+
+def filter_dict(dict, keys):
+    return {key: dict[key] for key in keys}
 
 
 def date_try_parse(datetime_str):
     datetime_str_parts = datetime_str.split("+")
     datetime_str, utc_change_str = datetime_str_parts[0], datetime_str_parts[1]
-    utc_change = datetime.strptime(utc_change_str, '%H:%M').time()
-    datetime_fin = datetime.strptime(datetime_str, '%Y-%m-%dT%H:%M:%S')
+    utc_change = datetime.strptime(utc_change_str, "%H:%M").time()
+    datetime_fin = datetime.strptime(datetime_str, "%Y-%m-%dT%H:%M:%S")
 
     # not consider daylight saving time -> all times in UTC +01:00 (winter time)
     if utc_change.hour > 1:
@@ -160,18 +165,19 @@ def get_year_dataframe(year, df):
         return df
 
 
-def create_counts_dataframe(df, resample):
+def create_counts_dataframe(df, resample, settings):
     df = df.resample(resample)
 
     df_res = pd.DataFrame()
     df_res["Counts"] = df["field5"].count()  # bedroom
-    df_res["Counts"] += df["field4"].count()  # living room
+    if not settings.is_air:
+        df_res["Counts"] += df["field4"].count()  # living room
     return df_res
 
 
-def create_final_dataframe(df, resample, data_key):
+def create_final_dataframe(df, resample, data_key, settings):
     df = df[[data_key]]
-    ser = cleanup_df_column(df, data_key)
+    ser = cleanup_df_column(df, data_key, settings.is_air)
 
     # resample according to settings
     df_res = pd.DataFrame()
@@ -187,19 +193,22 @@ def create_final_dataframe(df, resample, data_key):
     return df_res
 
 
-def cleanup_df_column(df, data_key):
+def cleanup_df_column(df, data_key, is_air):
     # cleanup data
     df = df[[data_key]].dropna()
-    ser = remove_peaks(df[data_key])
+    ser = df[data_key]
+    if not is_air:
+        ser = remove_peaks(ser)
 
-    if data_key == "field1":
-        # only for outside temperature
+    if is_air and data_key == "field1":
+        # only for outside temperature in meteo
         ser = remove_sunshine(ser)
 
     return pd.to_numeric(ser)
 
 
 def remove_peaks(ser):
+    """Some Meteo measurements contain wrong values due to error -> large peaks in data."""
     if len(ser) < 1000:
         return ser
 
@@ -364,7 +373,7 @@ def plot_data(df, name, ylabel, color, xticks_format, out_file=""):
     plt.close()
 
 
-def create_statistics_file(df_year, channel_map, year, year_root):
+def create_statistics_file(df_year, channel_map, year, year_root, settings):
     f = open(os.path.join(year_root, "statistics.txt"), "w")
     year_name = "All" if year is None else str(year)
     start_date = df_year.iloc[0].name
@@ -378,13 +387,14 @@ def create_statistics_file(df_year, channel_map, year, year_root):
     ratio = 100 * len(df_year) / ((timespan.days * 24 + timespan.seconds / 3600) * values_per_hour)
     f.write(f"Total number of entries: {len(df_year)} ({ratio:.1f} %)\n")
     f.write(f"Number of days: {delta.days}\n")
-    f.write(f"Number of sunny days: {count_sunny_days(df_year['field3'])}\n")  # use balcony temperature with direct sunshine
-    f.write(f"Number of freezing days (Tmax < 0 °C): {count_freezing_days(df_year['field1'])}\n")
-    f.write(f"Number of tropic days (Tmin > 20 °C): {count_tropic_days(df_year['field1'])}\n")
-    f.write(f"Number of constant days (Tspan < 2 °C): {count_constant_days(df_year['field1'])}\n")
+    if not settings.is_air:
+        f.write(f"Number of sunny days: {count_sunny_days(df_year['field3'])}\n")  # use balcony temperature with direct sunshine
+        f.write(f"Number of freezing days (Tmax < 0 °C): {count_freezing_days(df_year['field1'])}\n")
+        f.write(f"Number of tropic days (Tmin > 20 °C): {count_tropic_days(df_year['field1'])}\n")
+        f.write(f"Number of constant days (Tspan < 2 °C): {count_constant_days(df_year['field1'])}\n")
 
     for ch_key, ch_settings in channel_map.items():
-        ser = cleanup_df_column(df_year, ch_key)
+        ser = cleanup_df_column(df_year, ch_key, settings.is_air)
         f.write(f"\n{ch_settings.channel_name} ({ch_settings.yaxis_label})\n")
         f.write(f"\tEntries: {ser.count()}\n")
         f.write(f"\tMean: {ser.mean():.1f} (+-{ser.std():.1f})\n")
@@ -393,145 +403,31 @@ def create_statistics_file(df_year, channel_map, year, year_root):
     f.close()
 
 
-def show_day(df, column_name, day):
-    ser = df[str(day)][column_name]
-    ser = ser.dropna()
-    ser_c = cleanup_df_column(df[str(day)], column_name)
+def process_meteo():
+    # yearly: daily, weekly, monthly aggregation
+    data_folder = "0_Data"
+    out_folder = "0_OutputMeteo"
+    settings = GeneralSettings(True, os.path.join(data_folder, "feeds_meteo.csv"), out_folder, 2019, os.path.join(out_folder, "yearly_data.db"))
+    process_csv_data(CHANNEL_MAP_METEO, settings, filter_dict(DEFAULT_RESAMPLES, ["D", "W", "M"]))
 
-    plt.title(str(day))
-    plt.plot(ser, color="grey", label="original")
-    plt.plot(ser_c, color="blue", marker=".", label="cleaned")
-    plt.gca().xaxis.set_major_formatter(dates.DateFormatter("%H:%M"))
-    plt.legend()
-    plt.grid()
-    plt.tight_layout()
-    plt.show()
+    # all: weekly, monthly, yearly aggregation
+    settings.split_years = False
+    process_csv_data(CHANNEL_MAP_METEO, settings, filter_dict(DEFAULT_RESAMPLES, ["W", "M", "Y"]))
 
 
-def api_read():
-    with open("config.yml", "r") as stream:
-        try:
-            # https://www.mathworks.com/help/thingspeak/readdata.html
-            config = yaml.safe_load(stream)
-            no_results = 300
-
-            query_str = f'''https://api.thingspeak.com/channels/{config["channel_id"]}/feeds.json?api_key={config["read_api_key"]}&results={no_results}&timezone=Europe/Prague'''
-            res = requests.get(query_str)
-            if res.status_code == 200:
-                json_res = res.json()  # channel, feeds
-                feeds = json_res["feeds"]
-
-                # create dataframe from json string
-                df = pd.DataFrame(eval(str(feeds)), dtype=float)
-
-                # fix timestamp and set it as index
-                df[get_index_col()] = df[get_index_col()].apply(date_try_parse)
-                df.set_index(get_index_col(), inplace=True)
-                print(df)
-
-                # visualize
-                ch_key = "field1"
-                ch_settings = get_channel_map()[ch_key]
-                df_plot = df[ch_key].dropna()
-                plt.figure(figsize=(15, 8))
-                plt.plot(df_plot, color=ch_settings.color, marker="o")
-                plt.title(ch_settings.channel_name)
-                plt.ylabel(ch_settings.yaxis_label)
-                plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
-                plt.xticks(rotation=90)
-                plt.grid()
-                plt.tight_layout()
-                plt.show()
-        except yaml.YAMLError as exc:
-            print(exc)
-
-
-def validate_std():
-    input_file = os.path.join("0_Data", "feeds.csv")
-    df_main = load_file(input_file)
-
-    years = get_data_years(df_main)
-
-    for year in years:
-        if year != 2019:
-            continue
-
-        df_year = get_year_dataframe(year, df_main)
-
-        for data_key, _ in get_channel_map().items():
-            if data_key != "field3":
-                continue
-
-            df = df_year[[data_key]]
-            ser = cleanup_df_column(df, data_key)
-            resampled = ser.resample("D")
-            ser_mean = resampled.mean()
-            ser_count = resampled.count()
-
-            values, weights = ser_mean.to_list(), ser_count.to_list()
-            # weights = [1 for i in ser_count]
-            avg = np.average(values, weights=weights)
-            std = np.sqrt(np.average((values - avg) ** 2, weights=weights))
-
-            print(ser_mean)
-            print(ser_count)
-
-            # https://stackoverflow.com/questions/24984178/different-std-in-pandas-vs-numpy
-            # Note: biased vs. unbiased estimator of std (defaults of numpy and pandas)
-            # Calculated from the original values - base truth
-            print(f"\tMean:   {ser.mean():.3f} (+-{ser.std():.3f}) (+-{np.std(ser):.3f})")
-            # Calculated from daily values, not weighted - not correct
-            print(f"\tMeanR:  {ser_mean.mean():.3f} (+-{np.std(ser_mean.to_list()):.3f}) (+-{ser_mean.std():.3f})")
-            # Calculated from daily values, weighted - avg correct, std not
-            print(f"\tMeanWR: {avg:.3f} (+-{std:.3f})")  # biased estimator (ddof = 0)
-
-
-def filter_dict(dict, keys):
-    return {key: dict[key] for key in keys}
-
-
-def data_exploration_1():
-    data_file = os.path.join("0_Data", "feeds.csv")
-    date_start, date_end = "2021-06-09", "2021-06-24"
-    out_ch, in_ch, in_ch_b = "field1", "field4", "field5"
-    resample = "H"
-
-    df = load_file(data_file)
-    df = df[date_start:date_end]
-    ser_out = cleanup_df_column(df, out_ch).resample(resample).mean()
-    ser_in = cleanup_df_column(df, in_ch).resample(resample).mean()
-    ser_in_b = cleanup_df_column(df, in_ch_b).resample(resample).mean()
-
-    channel_map = get_channel_map()
-
-    plt.figure(figsize=(15, 8))
-    plt.plot(ser_out, label=channel_map[out_ch].channel_name, color="red")
-    plt.plot(ser_in, label=channel_map[in_ch].channel_name, color="blue")
-    plt.plot(ser_in_b, label=channel_map[in_ch_b].channel_name, color="green")
-    plt.xlabel("Date")
-    plt.xlim(pd.to_datetime(date_start), pd.to_datetime(date_end) + pd.Timedelta(1, "d"))
-    plt.xticks(rotation=90)
-    plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=1))
-    plt.ylabel(channel_map[out_ch].yaxis_label)
-    plt.yticks(np.arange(8, 35, 1.0))
-    plt.legend()
-    plt.grid()
-    plt.tight_layout()
-    plt.show()
+def process_air():
+    data_folder = "0_Data"
+    out_folder = "0_OutputAir"
+    settings = GeneralSettings(False, os.path.join(data_folder, "feeds_air.csv"), out_folder, 2022, os.path.join(out_folder, "yearly_data.db"), is_air=True, )
+    process_csv_data(CHANNEL_MAP_AIR, settings, filter_dict(DEFAULT_RESAMPLES, ["W", "M", "Y"]))
 
 
 if __name__ == "__main__":
-    # # yearly: daily, weekly, monthly aggregation
-    settings = GeneralSettings(True, os.path.join("0_Data", "feeds.csv"), "0_Output", 2019)
-    process_csv_data(settings, filter_dict(get_default_resamples(), ["D", "W", "M"]))
-
-    # # all: weekly, monthly, yearly aggregation
-    settings.split_years = False
-    process_csv_data(settings, filter_dict(get_default_resamples(), ["W", "M", "Y"]))
+    process_meteo()
+    process_air()
 
     # other experiments
-    # api_read()
-    # validate_std()
-    # data_exploration_1()
-
-
+    # exp.api_read()
+    # exp.validate_std()
+    # exp.data_exploration_1()
+    # exp.show_day(os.path.join("0_Data", "feeds_air.csv"), CHANNEL_MAP_AIR, "field1", datetime(year=2022, month=12, day=1).date(), is_air=True)
