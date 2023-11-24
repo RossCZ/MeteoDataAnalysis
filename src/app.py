@@ -29,23 +29,7 @@ def process_csv_data(
     # cumulative plots
     if settings.split_years and settings.cumulative_plots:
         print("Cumulative plots")
-        out_folder = Path(settings.out_root, "Cumulative")
-        out_folder.mkdir(parents=True, exist_ok=True)
-
-        for ch_settings in channels:
-            for r_settings in resamples:
-                if r_settings.pd_resample != "M":
-                    continue
-
-                c_data = {}
-                for year in years:
-                    df_year = DataProcessor.get_year_dataframe(year, df_main)
-                    df = DataProcessor.create_interval_dataframe(df_year, r_settings.pd_resample, ch_settings.channel_key, settings)
-                    df_c_year = df["Mean"].copy()
-                    df_c_year.index = [dt.month for dt in df_c_year.index]
-                    c_data[year] = df_c_year
-                df_c = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in c_data.items()]))
-                Plotter.plot_data_multi_cumulative(df_c, ch_settings.channel_name, ch_settings.yaxis_label, Path(out_folder, ch_settings.channel_name))
+        cumulative_plots(settings, channels, years, df_main)
 
     # year plots
     for year in years:
@@ -98,6 +82,25 @@ def process_csv_data(
                     Plotter.plot_data_multi(df, name, ch_settings_list, r_settings.xticks_format, out_file)
 
     print("Finished")
+
+
+def cumulative_plots(settings, channels, years, df_main):
+    out_folder = Path(settings.out_root, "Cumulative")
+    out_folder.mkdir(parents=True, exist_ok=True)
+
+    for ch_settings in channels:
+        c_data = {}
+        for year in years:
+            df_year = DataProcessor.get_year_dataframe(year, df_main)
+            df = DataProcessor.create_interval_dataframe(df_year, "M", ch_settings.channel_key, settings)
+            df_c_year = df["Mean"].copy()
+            df_c_year.index = [dt.month for dt in df_c_year.index]
+            c_data[year] = df_c_year
+        df_c = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in c_data.items()]))
+        Plotter.plot_data_multi_cumulative(df_c, ch_settings.channel_name, ch_settings.yaxis_label, Path(out_folder, ch_settings.channel_name))
+
+        if ch_settings.channel_name == "Temperature out":
+            Plotter.plot_data_multi_cumulative_plotly(df_c, "Mean monthly temperature", ch_settings.yaxis_label, Path(out_folder, ch_settings.channel_name))
 
 
 def process_meteo():

@@ -6,6 +6,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import matplotlib.dates as mdates
+import plotly.express as px
 
 
 class DataProcessor:
@@ -283,6 +284,21 @@ class Plotter:
             plt.plot(df[column], color=cmap(ratio), alpha=ratio, marker=marker, label=column)
         plt.legend()
         Plotter.__plot_data_base(df, name, ylabel, "cumulative", out_file, xlabel="Month")
+
+    @staticmethod
+    def plot_data_multi_cumulative_plotly(df, name, ylabel, out_file=""):
+        fig = px.line(df, title=name, markers=True, color_discrete_sequence=px.colors.sequential.Teal).update_layout(
+            xaxis_title="Month",
+            yaxis_title=ylabel,
+            xaxis=dict(
+                tickmode="linear",
+                dtick=1,
+            )
+        )
+        if out_file:
+            fig.write_html(f"{out_file}.html")
+        else:
+            fig.show()
 
     @staticmethod
     def __initialize_plot():
