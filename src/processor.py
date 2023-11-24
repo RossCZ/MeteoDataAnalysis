@@ -1,7 +1,8 @@
-import os
+from pathlib import Path
 from datetime import datetime, timedelta, time
 import pandas as pd
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import matplotlib.dates as mdates
@@ -84,7 +85,7 @@ class DataProcessor:
 
     @staticmethod
     def create_statistics_file(df_year, channels, year, year_root, settings):
-        f = open(os.path.join(year_root, "statistics.txt"), "w")
+        f = open(Path(year_root, "statistics.txt"), "w")
         year_name = "All" if year is None else str(year)
         start_date = df_year.iloc[0].name
         end_date = df_year.iloc[-1].name
@@ -93,7 +94,10 @@ class DataProcessor:
         f.write(f"Statistics for year: {year_name}\n\n")
         f.write(f"from {start_date} to {end_date}\n")
         timespan = (end_date - start_date)
-        values_per_hour = 2 * 60 / 10  # 2 stations, measurements per 10 minutes
+        if settings.is_air:
+            values_per_hour = 1
+        else:
+            values_per_hour = 2 * 60 / 10  # 2 stations, measurements per 10 minutes
         ratio = 100 * len(df_year) / ((timespan.days * 24 + timespan.seconds / 3600) * values_per_hour)
         f.write(f"Total number of entries: {len(df_year)} ({ratio:.1f} %)\n")
         f.write(f"Number of days: {delta.days}\n")
@@ -143,7 +147,7 @@ class DaysCounters:
                 # plt.grid()
                 # plt.tight_layout()
                 # # plt.show()
-                # plt.savefig(os.path.join("0_Sunny", f"{date_today}.png"))
+                # plt.savefig(Path("0_Sunny", f"{date_today}.png"))
                 # plt.close()
 
             date_today += timedelta(days=1)
@@ -270,6 +274,17 @@ class Plotter:
         Plotter.__plot_data_base(df, name, ch_settings_list[0].yaxis_label, xticks_format, out_file)
 
     @staticmethod
+    def plot_data_multi_cumulative(df, name, ylabel, out_file=""):
+        Plotter.__initialize_plot()
+        cmap = matplotlib.cm.get_cmap("gist_earth_r")
+        for i, column in enumerate(df.columns):
+            marker = "."
+            ratio = ((i + 1) / len(df.columns))
+            plt.plot(df[column], color=cmap(ratio), alpha=ratio, marker=marker, label=column)
+        plt.legend()
+        Plotter.__plot_data_base(df, name, ylabel, "cumulative", out_file, xlabel="Month")
+
+    @staticmethod
     def __initialize_plot():
         # plot settings
         dpi = 100
@@ -281,32 +296,34 @@ class Plotter:
         return fig
 
     @staticmethod
-    def __plot_data_base(df, name, ylabel, xticks_format, out_file=""):
+    def __plot_data_base(df, name, ylabel, xticks_format, out_file="", xlabel="Date"):
         plt.title(name)
-        plt.xlabel("Date")
-        plt.xticks(rotation=90)
+        plt.xlabel(xlabel)
         margin = timedelta(days=0) if len(df) > 1 else timedelta(days=7)
-        plt.xlim(df.iloc[0].name - margin, df.iloc[-1].name + margin)
 
-        if type(xticks_format) == int:
-            plt.gca().xaxis.set_major_locator(ticker.MultipleLocator(base=xticks_format))  # label each N days
-            plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
-        elif type(xticks_format) == str:
-            plt.xticks(df.index)  # use index dates as ticks
-            if xticks_format == "W":
-                if len(df) < 100:
-                    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
-                else:  # use month formatter for large number of weeks
-                    plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
-                    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%m/%Y"))
-            elif xticks_format == "M":
-                plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%m/%Y"))
-            elif xticks_format == "Y":
-                plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
-            else:
-                raise NotImplementedError()
+        if xticks_format == "cumulative":
+            plt.xticks(df.index)
         else:
-            raise NotImplementedError()
+            plt.xticks(rotation=90)
+            plt.xlim(df.iloc[0].name - margin, df.iloc[-1].name + margin)
+
+            if type(xticks_format) == int:
+                plt.gca().xaxis.set_major_locator(ticker.MultipleLocator(base=xticks_format))  # label each N days
+                plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+            elif type(xticks_format) == str:
+                plt.xticks(df.index)  # use index dates as ticks
+                if xticks_format == "W":
+                    if len(df) < 100:
+                        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+                    else:  # use month formatter for large number of weeks
+                        plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
+                        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%m/%Y"))
+                elif xticks_format == "M":
+                    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%m/%Y"))
+                elif xticks_format == "Y":
+                    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+                else:
+                    raise NotImplementedError()
 
         plt.ylabel(ylabel)
         plt.gca().yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.1f}"))

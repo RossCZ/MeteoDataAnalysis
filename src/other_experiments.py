@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import yaml
@@ -48,7 +48,7 @@ def api_read():
 
 
 def validate_std():
-    input_file = os.path.join("0_Data", "feeds_meteo.csv")
+    input_file = Path("0_Data", "feeds_meteo.csv")
     df_main = DataProcessor.load_file(input_file, INDEX_COL)
 
     years = DataProcessor.get_data_years(df_main)
@@ -88,7 +88,7 @@ def validate_std():
 
 
 def data_exploration_1():
-    data_file = os.path.join("0_Data", "feeds_meteo.csv")
+    data_file = Path("0_Data", "feeds_meteo.csv")
     date_start, date_end = "2021-06-09", "2021-06-24"
     resample = "H"
     out_ch, in_ch, in_ch_b = CHANNELS_METEO[0], CHANNELS_METEO[3], CHANNELS_METEO[4]  # field 1, 4, 5

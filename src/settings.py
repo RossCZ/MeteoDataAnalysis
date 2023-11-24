@@ -1,16 +1,18 @@
 from enum import Enum
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
 class GeneralSettings:
     """Class to hold general data processing settings"""
     split_years: bool
-    input_file: str
-    out_root: str
+    input_file: Path
+    out_root: Path
     start_year: int
-    db_out_file: str
+    db_out_file: Path
     is_air: bool = False
+    cumulative_plots: bool = True
 
 
 @dataclass
