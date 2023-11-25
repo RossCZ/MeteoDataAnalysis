@@ -95,6 +95,7 @@ def cumulative_plots(settings, channels, years, df_main):
             df = DataProcessor.create_interval_dataframe(df_year, "M", ch_settings.channel_key, settings)
             df_c_year = df["Mean"].copy()
             df_c_year.index = [dt.month for dt in df_c_year.index]
+            df_c_year.index.name = "Month"
             c_data[year] = df_c_year
         df_c = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in c_data.items()]))
         Plotter.plot_data_multi_cumulative(df_c, ch_settings.channel_name, ch_settings.yaxis_label, Path(out_folder, ch_settings.channel_name))

@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import matplotlib.dates as mdates
 import plotly.express as px
+from plotly.express.colors import sample_colorscale
+# plt.style.use("ggplot")
 
 
 class DataProcessor:
@@ -287,7 +289,13 @@ class Plotter:
 
     @staticmethod
     def plot_data_multi_cumulative_plotly(df, name, ylabel, out_file=""):
-        fig = px.line(df, title=name, markers=True, color_discrete_sequence=px.colors.sequential.Teal).update_layout(
+        def format_rgba(rgb, a):
+            return rgb.replace("rgb", "rgba").replace(")", f", {a})")
+
+        samplepoints = np.linspace(0.2, 1, len(df.columns))
+        cmap = sample_colorscale(px.colors.sequential.tempo, samplepoints)
+        cmap = [format_rgba(c, samplepoints[i]) for i, c in enumerate(cmap)]  # add transparency
+        fig = px.line(df, title=name, markers=True, color_discrete_sequence=cmap).update_layout(
             xaxis_title="Month",
             yaxis_title=ylabel,
             xaxis=dict(
