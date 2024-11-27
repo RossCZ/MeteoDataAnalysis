@@ -40,8 +40,8 @@ class Labels(Enum):
 class Resamples(Enum):
     D = ResampleSettings("D", "Daily", 7)  # minimal resample with current code
     W = ResampleSettings("W", "Weekly", "W")
-    M = ResampleSettings("M", "Monthly", "M")
-    Y = ResampleSettings("Y", "Yearly", "Y")
+    M = ResampleSettings("ME", "Monthly", "M")
+    Y = ResampleSettings("YE", "Yearly", "Y")
 
 
 INDEX_COL = "created_at"

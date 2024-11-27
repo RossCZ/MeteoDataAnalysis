@@ -53,6 +53,14 @@ class DataProcessor:
         return df_res
 
     @staticmethod
+    def create_sunny_counts_dataframe(df, resample, settings):
+        df = df["field3"].resample(resample)
+
+        df_res = pd.DataFrame()
+        df_res["Sunny"] = df.apply(DaysCounters.sunny_days)
+        return df_res
+
+    @staticmethod
     def create_interval_dataframe(df, resample, data_key, settings):
         df = df[[data_key]]
         ser = DataCleaner.cleanup_df_column(df, data_key, settings.is_air)
@@ -201,7 +209,7 @@ class DataCleaner:
 
         # calculate moving average of the series and fill start of the series with non nan values
         ser_ma = ser.rolling(window_size).mean()
-        ser_ma.fillna(ser_ma[window_size - 1], inplace=True)
+        ser_ma.fillna(ser_ma.iloc[window_size - 1], inplace=True)
 
         # create compare max difference of each value of the series to moving average -> (True/False series)
         ser_diff = abs(ser_ma - ser) < diff_limit
@@ -243,7 +251,7 @@ class DataCleaner:
 
                     # linear interpolation of values within the sunshine time
                     ser_sunshine = ser[timestamp_start:timestamp_end]
-                    ser[timestamp_start:timestamp_end] = np.linspace(ser_sunshine[0], ser_sunshine[-1],
+                    ser[timestamp_start:timestamp_end] = np.linspace(ser_sunshine.iloc[0], ser_sunshine.iloc[-1],
                                                                      len(ser_sunshine))
 
                     # plt.plot(ser_day, color="grey")
@@ -260,7 +268,7 @@ class Plotter:
         Plotter.__initialize_plot()
         for i, column in enumerate(df.columns):
             if column != "Count":
-                alpha = 1.0 if column == "Mean" or column == "Counts" else 0.3
+                alpha = 1.0 if column in ["Mean", "Counts", "Sunny"] else 0.3
                 marker = "" if len(df) > 1 else "o"
                 plt.plot(df[column], color=color, alpha=alpha, marker=marker)
         Plotter.__plot_data_base(df, name, ylabel, xticks_format, out_file)

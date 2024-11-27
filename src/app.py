@@ -56,6 +56,12 @@ def process_csv_data(
             df_counts = DataProcessor.create_counts_dataframe(df_year, r_settings.pd_resample, settings)
             Plotter.plot_data_single(df_counts, "Counts", "Measurements [-]", "green", r_settings.xticks_format, Path(out_folder, "Counts"))
 
+            # sunny days count plot
+            if r_settings.pd_resample == Resamples.M.value.pd_resample:
+                print("\t\tSunny")
+                df_sunny = DataProcessor.create_sunny_counts_dataframe(df_year, r_settings.pd_resample, settings)
+                Plotter.plot_data_single(df_sunny, "Sunny days", "Sunny days [-]", "darkorange", r_settings.xticks_format, Path(out_folder, "Sunny"))
+
             # one-channel plot
             if channels:
                 dfs_final = {}
@@ -92,7 +98,7 @@ def cumulative_plots(settings, channels, years, df_main):
         c_data = {}
         for year in years:
             df_year = DataProcessor.get_year_dataframe(year, df_main)
-            df = DataProcessor.create_interval_dataframe(df_year, "M", ch_settings.channel_key, settings)
+            df = DataProcessor.create_interval_dataframe(df_year, Resamples.M.value.pd_resample, ch_settings.channel_key, settings)
             df_c_year = df["Mean"].copy()
             df_c_year.index = [dt.month for dt in df_c_year.index]
             df_c_year.index.name = "Month"
@@ -105,7 +111,7 @@ def cumulative_plots(settings, channels, years, df_main):
 
 
 def process_meteo():
-    # yearly: daily, weekly, monthly aggregation
+    # yearly: daily, weekly, monthly aggregation + cumulative
     data_folder = Path("0_Data")
     out_folder = Path("0_OutputMeteo")
     settings = GeneralSettings(True, Path(data_folder, "feeds_meteo.csv"), out_folder, 2019, Path(out_folder, "yearly_data.db"))
@@ -140,7 +146,7 @@ def process_air():
 
 if __name__ == "__main__":
     process_meteo()
-    process_air()
+    # process_air()
 
     # other experiments
     # exp.api_read()
