@@ -29,7 +29,10 @@ def process_csv_data(
     # cumulative plots
     if settings.split_years and settings.cumulative_plots:
         print("Cumulative plots")
-        cumulative_plots(settings, channels, years, df_main)
+        cum_channels = channels.copy()
+        if not settings.is_air:
+            cum_channels.append(ChannelSettings(channel_name="Sunny", yaxis_label="Sunny days [-]"))
+        cumulative_plots(settings, cum_channels, years, df_main)
 
     # year plots
     for year in years:
@@ -98,8 +101,10 @@ def cumulative_plots(settings, channels, years, df_main):
         c_data = {}
         for year in years:
             df_year = DataProcessor.get_year_dataframe(year, df_main)
-            df = DataProcessor.create_interval_dataframe(df_year, Resamples.M.value.pd_resample, ch_settings.channel_key, settings)
-            df_c_year = df["Mean"].copy()
+            if ch_settings.channel_name == "Sunny":
+                df_c_year = DataProcessor.create_sunny_counts_dataframe(df_year, Resamples.M.value.pd_resample, settings)["Sunny"]
+            else:
+                df_c_year = DataProcessor.create_interval_dataframe(df_year, Resamples.M.value.pd_resample, ch_settings.channel_key, settings)["Mean"]
             df_c_year.index = [dt.month for dt in df_c_year.index]
             df_c_year.index.name = "Month"
             c_data[year] = df_c_year
@@ -146,7 +151,7 @@ def process_air():
 
 if __name__ == "__main__":
     process_meteo()
-    # process_air()
+    process_air()
 
     # other experiments
     # exp.api_read()

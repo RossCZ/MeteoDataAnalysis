@@ -24,10 +24,10 @@ class ResampleSettings:
 
 @dataclass
 class ChannelSettings:
-    channel_key: str
-    channel_name: str
-    yaxis_label: str
-    color: str
+    channel_key: str = ""
+    channel_name: str = ""
+    yaxis_label: str = ""
+    color: str = ""
 
 
 class Labels(Enum):
