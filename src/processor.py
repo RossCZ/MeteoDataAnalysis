@@ -8,6 +8,7 @@ import matplotlib.ticker as ticker
 import matplotlib.dates as mdates
 import plotly.express as px
 from plotly.express.colors import sample_colorscale
+import plotly.graph_objects as go
 # plt.style.use("ggplot")
 
 
@@ -292,6 +293,7 @@ class Plotter:
             marker = "."
             ratio = ((i + 1) / len(df.columns))
             plt.plot(df[column], color=cmap(ratio), alpha=ratio, marker=marker, label=column)
+        plt.plot(df.mean(axis=1), color="firebrick", linestyle="dotted", linewidth=1, label="mean")
         plt.legend()
         Plotter.__plot_data_base(df, name, ylabel, "cumulative", out_file, xlabel="Month")
 
@@ -311,6 +313,8 @@ class Plotter:
                 dtick=1,
             )
         )
+        fig.add_trace(go.Scatter(x=df.index, y=df.mean(axis=1), name="mean", mode="lines",
+                                 line=dict(color="firebrick", width=1, dash="dot")))
         if out_file:
             fig.write_html(f"{out_file}.html")
         else:

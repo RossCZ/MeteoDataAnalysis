@@ -112,6 +112,10 @@ def cumulative_plots(settings, channels, years, df_main):
         Plotter.plot_data_multi_cumulative(df_c, ch_settings.channel_name, ch_settings.yaxis_label, Path(out_folder, ch_settings.channel_name))
 
         if ch_settings.channel_name == "Temperature out":
+            with open(Path(out_folder, "Temperature.md"), "w", encoding="utf-8") as file:
+                df_m = pd.DataFrame(dict(mean=df_c.mean(axis=1), std=df_c.std(axis=1)))
+                df_m["Temperature [°C]"] = df_m.apply(lambda m: f"{m['mean']:.1f} ± {m['std']:.1f}", axis=1)
+                df_m["Temperature [°C]"].to_markdown(file)
             Plotter.plot_data_multi_cumulative_plotly(df_c, "Mean monthly temperature", ch_settings.yaxis_label, Path(out_folder, ch_settings.channel_name))
 
 
@@ -151,7 +155,7 @@ def process_air():
 
 if __name__ == "__main__":
     process_meteo()
-    process_air()
+    # process_air()
 
     # other experiments
     # exp.api_read()
