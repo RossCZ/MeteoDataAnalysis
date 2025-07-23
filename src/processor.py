@@ -54,12 +54,8 @@ class DataProcessor:
         return df_res
 
     @staticmethod
-    def create_sunny_counts_dataframe(df, resample, settings):
-        df = df["field3"].resample(resample)
-
-        df_res = pd.DataFrame()
-        df_res["Sunny"] = df.apply(DaysCounters.sunny_days)
-        return df_res
+    def create_day_counts_dataframe(df, resample, field, counter):
+        return df[field].resample(resample).apply(counter)
 
     @staticmethod
     def create_interval_dataframe(df, resample, data_key, settings):
@@ -116,10 +112,11 @@ class DataProcessor:
 
         # meteo-specific parameters
         if not settings.is_air:
-            f.write(
-                f"Number of sunny days: {DaysCounters.sunny_days(df_year['field3'])}\n")  # use balcony temperature with direct sunshine
-            f.write(f"Number of freezing days (Tmax < 0 °C): {DaysCounters.freezing_days(df_year['field1'])}\n")
-            f.write(f"Number of tropic days (Tmin > 20 °C): {DaysCounters.tropic_days(df_year['field1'])}\n")
+            f.write(f"Number of sunny days: {DaysCounters.sunny_days(df_year['field3'])}\n")  # use balcony temperature with direct sunshine
+            f.write(f"Number of tropic days (Tmax > 30 °C): {DaysCounters.tropic_days(df_year['field1'])}\n")
+            f.write(f"Number of tropic nights (Tmin > 20 °C): {DaysCounters.tropic_nights(df_year['field1'])}\n")
+            f.write(f"Number of freezing days (Tmin < 0 °C): {DaysCounters.freezing_days(df_year['field1'])}\n")
+            f.write(f"Number of ice days (Tmax < 0 °C): {DaysCounters.ice_days(df_year['field1'])}\n")
             f.write(f"Number of constant days (Tspan < 2 °C): {DaysCounters.constant_days(df_year['field1'])}\n")
 
         for ch_settings in channels:
@@ -172,12 +169,20 @@ class DaysCounters:
         return DaysCounters.__count_days_in_series(ser, lambda ser_day: ser_day.std() > 4)
 
     @staticmethod
-    def freezing_days(ser):
-        return DaysCounters.__count_days_in_series(ser, lambda ser_day: ser_day.max() < 0.0)
+    def tropic_days(ser):
+        return DaysCounters.__count_days_in_series(ser, lambda ser_day: ser_day.max() > 30.0)
 
     @staticmethod
-    def tropic_days(ser):
+    def tropic_nights(ser):
         return DaysCounters.__count_days_in_series(ser, lambda ser_day: ser_day.min() > 20.0)
+
+    @staticmethod
+    def freezing_days(ser):
+        return DaysCounters.__count_days_in_series(ser, lambda ser_day: ser_day.min() < 0.0)
+
+    @staticmethod
+    def ice_days(ser):
+        return DaysCounters.__count_days_in_series(ser, lambda ser_day: ser_day.max() < 0.0)
 
     @staticmethod
     def constant_days(ser):

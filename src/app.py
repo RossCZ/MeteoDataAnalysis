@@ -5,7 +5,7 @@ import pandas as pd
 
 import db_helper as db
 import other_experiments as exp
-from processor import DataProcessor, Plotter
+from processor import DataProcessor, Plotter, DaysCounters
 from settings import GeneralSettings, ResampleSettings, ChannelSettings, Resamples, INDEX_COL, CHANNELS_METEO, CHANNELS_AIR
 
 
@@ -31,7 +31,12 @@ def process_csv_data(
         print("Cumulative plots")
         cum_channels = channels.copy()
         if not settings.is_air:
-            cum_channels.append(ChannelSettings(channel_name="Sunny", yaxis_label="Sunny days [-]"))
+            cum_channels.append(ChannelSettings(channel_name="Sunny days", yaxis_label="Sunny days"))
+            cum_channels.append(ChannelSettings(channel_name="Tropic days", yaxis_label="Tropic days (Tmax > 30°C)"))
+            cum_channels.append(ChannelSettings(channel_name="Tropic nights", yaxis_label="Tropic nights (Tmin > 20°C)"))
+            cum_channels.append(ChannelSettings(channel_name="Freezing days", yaxis_label="Freezing days (Tmin < 0°C)"))
+            cum_channels.append(ChannelSettings(channel_name="Ice days", yaxis_label="Ice days (Tmax < 0°C)"))
+            cum_channels.append(ChannelSettings(channel_name="Constant days", yaxis_label="Constant days (Tspan < 2 °C)"))
         cumulative_plots(settings, cum_channels, years, df_main)
 
     # year plots
@@ -60,10 +65,10 @@ def process_csv_data(
             Plotter.plot_data_single(df_counts, "Counts", "Measurements [-]", "green", r_settings.xticks_format, Path(out_folder, "Counts"))
 
             # sunny days count plot
-            if r_settings.pd_resample == Resamples.M.value.pd_resample:
-                print("\t\tSunny")
-                df_sunny = DataProcessor.create_sunny_counts_dataframe(df_year, r_settings.pd_resample, settings)
-                Plotter.plot_data_single(df_sunny, "Sunny days", "Sunny days [-]", "darkorange", r_settings.xticks_format, Path(out_folder, "Sunny"))
+            # if r_settings.pd_resample == Resamples.M.value.pd_resample:
+            #     print("\t\tSunny")
+            #     df_sunny = DataProcessor.create_sunny_counts_dataframe(df_year, r_settings.pd_resample, settings)
+            #     Plotter.plot_data_single(df_sunny, "Sunny days", "Sunny days [-]", "darkorange", r_settings.xticks_format, Path(out_folder, "Sunny"))
 
             # one-channel plot
             if channels:
@@ -101,8 +106,18 @@ def cumulative_plots(settings, channels, years, df_main):
         c_data = {}
         for year in years:
             df_year = DataProcessor.get_year_dataframe(year, df_main)
-            if ch_settings.channel_name == "Sunny":
-                df_c_year = DataProcessor.create_sunny_counts_dataframe(df_year, Resamples.M.value.pd_resample, settings)["Sunny"]
+            if ch_settings.channel_name == "Sunny days":
+                df_c_year = DataProcessor.create_day_counts_dataframe(df_year, Resamples.M.value.pd_resample, "field3", DaysCounters.sunny_days)
+            elif ch_settings.channel_name == "Tropic days":
+                df_c_year = DataProcessor.create_day_counts_dataframe(df_year, Resamples.M.value.pd_resample, "field1", DaysCounters.tropic_days)
+            elif ch_settings.channel_name == "Tropic nights":
+                df_c_year = DataProcessor.create_day_counts_dataframe(df_year, Resamples.M.value.pd_resample, "field1", DaysCounters.tropic_nights)
+            elif ch_settings.channel_name == "Freezing days":
+                df_c_year = DataProcessor.create_day_counts_dataframe(df_year, Resamples.M.value.pd_resample, "field1", DaysCounters.freezing_days)
+            elif ch_settings.channel_name == "Ice days":
+                df_c_year = DataProcessor.create_day_counts_dataframe(df_year, Resamples.M.value.pd_resample, "field1", DaysCounters.ice_days)
+            elif ch_settings.channel_name == "Constant days":
+                df_c_year = DataProcessor.create_day_counts_dataframe(df_year, Resamples.M.value.pd_resample, "field1", DaysCounters.constant_days)
             else:
                 df_c_year = DataProcessor.create_interval_dataframe(df_year, Resamples.M.value.pd_resample, ch_settings.channel_key, settings)["Mean"]
             df_c_year.index = [dt.month for dt in df_c_year.index]
