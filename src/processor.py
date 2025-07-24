@@ -113,11 +113,11 @@ class DataProcessor:
         # meteo-specific parameters
         if not settings.is_air:
             f.write(f"Number of sunny days: {DaysCounters.sunny_days(df_year['field3'])}\n")  # use balcony temperature with direct sunshine
-            f.write(f"Number of tropic days (Tmax > 30 °C): {DaysCounters.tropic_days(df_year['field1'])}\n")
-            f.write(f"Number of tropic nights (Tmin > 20 °C): {DaysCounters.tropic_nights(df_year['field1'])}\n")
-            f.write(f"Number of freezing days (Tmin < 0 °C): {DaysCounters.freezing_days(df_year['field1'])}\n")
-            f.write(f"Number of ice days (Tmax < 0 °C): {DaysCounters.ice_days(df_year['field1'])}\n")
-            f.write(f"Number of constant days (Tspan < 2 °C): {DaysCounters.constant_days(df_year['field1'])}\n")
+            f.write(f"Number of tropic days (Tmax > 30°C): {DaysCounters.tropic_days(df_year['field1'])}\n")
+            f.write(f"Number of tropic nights (Tmin > 20°C): {DaysCounters.tropic_nights(df_year['field1'])}\n")
+            f.write(f"Number of freezing days (Tmin < 0°C): {DaysCounters.freezing_days(df_year['field1'])}\n")
+            f.write(f"Number of ice days (Tmax < 0°C): {DaysCounters.ice_days(df_year['field1'])}\n")
+            f.write(f"Number of constant days (Tspan < 2°C): {DaysCounters.constant_days(df_year['field1'])}\n")
 
         for ch_settings in channels:
             ser = DataCleaner.cleanup_df_column(df_year, ch_settings.channel_key, settings.is_air)
@@ -299,6 +299,8 @@ class Plotter:
             ratio = ((i + 1) / len(df.columns))
             plt.plot(df[column], color=cmap(ratio), alpha=ratio, marker=marker, label=column)
         plt.plot(df.mean(axis=1), color="firebrick", linestyle="dotted", linewidth=1, label="mean")
+        if "days" in name or "nights" in name:
+            plt.ylim(0, 32)
         plt.legend()
         Plotter.__plot_data_base(df, name, ylabel, "cumulative", out_file, xlabel="Month")
 

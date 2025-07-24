@@ -36,7 +36,7 @@ def process_csv_data(
             cum_channels.append(ChannelSettings(channel_name="Tropic nights", yaxis_label="Tropic nights (Tmin > 20°C)"))
             cum_channels.append(ChannelSettings(channel_name="Freezing days", yaxis_label="Freezing days (Tmin < 0°C)"))
             cum_channels.append(ChannelSettings(channel_name="Ice days", yaxis_label="Ice days (Tmax < 0°C)"))
-            cum_channels.append(ChannelSettings(channel_name="Constant days", yaxis_label="Constant days (Tspan < 2 °C)"))
+            cum_channels.append(ChannelSettings(channel_name="Constant days", yaxis_label="Constant days (Tspan < 2°C)"))
         cumulative_plots(settings, cum_channels, years, df_main)
 
     # year plots
@@ -99,10 +99,8 @@ def process_csv_data(
 
 
 def cumulative_plots(settings, channels, years, df_main):
-    out_folder = Path(settings.out_root, "Cumulative")
-    out_folder.mkdir(parents=True, exist_ok=True)
-
     for ch_settings in channels:
+        # prepare data
         c_data = {}
         for year in years:
             df_year = DataProcessor.get_year_dataframe(year, df_main)
@@ -123,15 +121,24 @@ def cumulative_plots(settings, channels, years, df_main):
             df_c_year.index = [dt.month for dt in df_c_year.index]
             df_c_year.index.name = "Month"
             c_data[year] = df_c_year
+
+        # prepare out path
+        out_folder = Path(settings.out_root, "Cumulative")
+        if "days" in ch_settings.channel_name or "nights" in ch_settings.channel_name:
+            out_folder = Path(out_folder, "Days")
+        out_folder.mkdir(parents=True, exist_ok=True)
+        out_path = Path(out_folder, ch_settings.channel_name)
+
+        # plot data
         df_c = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in c_data.items()]))
-        Plotter.plot_data_multi_cumulative(df_c, ch_settings.channel_name, ch_settings.yaxis_label, Path(out_folder, ch_settings.channel_name))
+        Plotter.plot_data_multi_cumulative(df_c, ch_settings.channel_name, ch_settings.yaxis_label, out_path)
 
         if ch_settings.channel_name == "Temperature out":
             with open(Path(out_folder, "Temperature.md"), "w", encoding="utf-8") as file:
                 df_m = pd.DataFrame(dict(mean=df_c.mean(axis=1), std=df_c.std(axis=1)))
                 df_m["Temperature [°C]"] = df_m.apply(lambda m: f"{m['mean']:.1f} ± {m['std']:.1f}", axis=1)
                 df_m["Temperature [°C]"].to_markdown(file)
-            Plotter.plot_data_multi_cumulative_plotly(df_c, "Mean monthly temperature", ch_settings.yaxis_label, Path(out_folder, ch_settings.channel_name))
+            Plotter.plot_data_multi_cumulative_plotly(df_c, "Mean monthly temperature", ch_settings.yaxis_label, out_path)
 
 
 def process_meteo():
