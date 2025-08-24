@@ -9,6 +9,8 @@ import matplotlib.dates as mdates
 import plotly.express as px
 from plotly.express.colors import sample_colorscale
 import plotly.graph_objects as go
+from settings import MeteoChannels
+
 # plt.style.use("ggplot")
 
 
@@ -37,9 +39,14 @@ class DataProcessor:
         return [year for year in range(year_min, year_max + 1)]
 
     @staticmethod
-    def get_year_dataframe(year, df):
+    def slice_year(year, df, convert=False):
         if year is not None:
-            return df[f"{year}-1-1":f"{year}-12-31"]
+            date_from = f"{year}-1-1"
+            date_to = f"{year}-12-31"
+            if convert:
+                date_from = pd.to_datetime(date_from)
+                date_to = pd.to_datetime(date_to)
+            return df[date_from:date_to]
         else:
             return df
 
@@ -48,30 +55,46 @@ class DataProcessor:
         df = df.resample(resample)
 
         df_res = pd.DataFrame()
-        df_res["Counts"] = df["field5"].count()  # meteo: bedroom
+        df_res["Counts"] = df[MeteoChannels.TinB.value.channel_key].count()  # meteo: bedroom
         if not settings.is_air:  # only one station for air
-            df_res["Counts"] += df["field4"].count()  # meteo: living room
+            df_res["Counts"] += df[MeteoChannels.TinL.value.channel_key].count()  # meteo: living room
         return df_res
 
     @staticmethod
-    def create_day_counts_dataframe(df, resample, field, counter):
-        return df[field].resample(resample).apply(counter)
+    def create_day_counts_series(df, resample, data_key, counter) -> pd.Series:
+        df = df[[data_key]]
+        ser = DataCleaner.cleanup_df_column(df, data_key, is_air=False)
+        return ser.resample(resample).apply(counter)
 
     @staticmethod
-    def create_interval_dataframe(df, resample, data_key, settings):
+    def preprocess_day_counts_series(df, resample, data_key):
+        # returns preprocessed series for given channel (same as create_day_counts_series before applying counter)
+        df = df[[data_key]]
+        ser = DataCleaner.cleanup_df_column(df, data_key, is_air=False)
+        return ser.resample(resample)
+
+    @staticmethod
+    def create_interval_dataframe(df, resample, data_key, settings, aggregation="All"):
         df = df[[data_key]]
         ser = DataCleaner.cleanup_df_column(df, data_key, settings.is_air)
 
         # resample according to settings
         df_res = pd.DataFrame()
         resampled = ser.resample(resample)
-        df_res["Mean"] = resampled.mean()
-        df_res["Min"] = resampled.min()
-        df_res["Max"] = resampled.max()
-        df_res["Count"] = resampled.count()
 
-        # minimal resampling is day - use only date part of datetime
-        df_res.index = [inx.date() for inx in df_res.index.tolist()]
+        all = (aggregation == "All")
+        if all or aggregation == "Mean":
+            df_res["Mean"] = resampled.mean()
+        elif all or aggregation == "Min":
+            df_res["Min"] = resampled.min()
+        elif all or aggregation == "Max":
+            df_res["Max"] = resampled.max()
+        elif all or aggregation == "Count":
+            df_res["Count"] = resampled.count()
+        elif all or aggregation == "MinMax":
+            df_res["MinMax"] = resampled.apply(DaysCounters.daily_min_max)
+        elif all or aggregation == "MaxMin":
+            df_res["MaxMin"] = resampled.apply(DaysCounters.daily_max_min)
 
         return df_res
 
@@ -92,8 +115,8 @@ class DataProcessor:
         return df_res
 
     @staticmethod
-    def create_statistics_file(df_year, channels, year, year_root, settings):
-        f = open(Path(year_root, "statistics.txt"), "w")
+    def create_statistics_file(df_year, channels, year, year_root, settings, file_name="statistics.txt"):
+        f = open(Path(year_root, file_name), "w")
         year_name = "All" if year is None else str(year)
         start_date = df_year.iloc[0].name
         end_date = df_year.iloc[-1].name
@@ -112,12 +135,14 @@ class DataProcessor:
 
         # meteo-specific parameters
         if not settings.is_air:
-            f.write(f"Number of sunny days: {DaysCounters.sunny_days(df_year['field3'])}\n")  # use balcony temperature with direct sunshine
-            f.write(f"Number of tropic days (Tmax > 30°C): {DaysCounters.tropic_days(df_year['field1'])}\n")
-            f.write(f"Number of tropic nights (Tmin > 20°C): {DaysCounters.tropic_nights(df_year['field1'])}\n")
-            f.write(f"Number of freezing days (Tmin < 0°C): {DaysCounters.freezing_days(df_year['field1'])}\n")
-            f.write(f"Number of ice days (Tmax < 0°C): {DaysCounters.ice_days(df_year['field1'])}\n")
-            f.write(f"Number of constant days (Tspan < 2°C): {DaysCounters.constant_days(df_year['field1'])}\n")
+            ser_balc = DataCleaner.cleanup_df_column(df_year, MeteoChannels.Tbalc.value.channel_key, settings.is_air)
+            ser_tout = DataCleaner.cleanup_df_column(df_year, MeteoChannels.Tout.value.channel_key, settings.is_air)
+            f.write(f"Number of sunny days: {DaysCounters.sunny_days(ser_balc)}\n")  # use balcony temperature with direct sunshine
+            f.write(f"Number of tropic days (Tmax > 30°C): {DaysCounters.tropic_days(ser_tout)}\n")
+            f.write(f"Number of tropic nights (Tmin > 20°C): {DaysCounters.tropic_nights(ser_tout)}\n")
+            f.write(f"Number of freezing days (Tmin < 0°C): {DaysCounters.freezing_days(ser_tout)}\n")
+            f.write(f"Number of ice days (Tmax < 0°C): {DaysCounters.ice_days(ser_tout)}\n")
+            f.write(f"Number of constant days (Tspan < 2°C): {DaysCounters.constant_days(ser_tout)}\n")
 
         for ch_settings in channels:
             ser = DataCleaner.cleanup_df_column(df_year, ch_settings.channel_key, settings.is_air)
@@ -188,6 +213,14 @@ class DaysCounters:
     def constant_days(ser):
         return DaysCounters.__count_days_in_series(ser, lambda ser_day: (ser_day.max() - ser_day.min()) < 2.0)
 
+    @staticmethod
+    def daily_min_max(ser: pd.Series):
+        return ser.resample("D").apply(lambda ser_day: ser_day.max()).min()
+
+    @staticmethod
+    def daily_max_min(ser: pd.Series):
+        return ser.resample("D").apply(lambda ser_day: ser_day.min()).max()
+
 
 class DataCleaner:
     @staticmethod
@@ -198,7 +231,7 @@ class DataCleaner:
 
         if not is_air:
             ser = DataCleaner.remove_peaks(ser)
-            if channel_key == "field1":  # only for outside temperature in meteo
+            if channel_key == MeteoChannels.Tout.value.channel_key:  # only for outside temperature in meteo
                 ser = DataCleaner.remove_sunshine(ser)
 
         return pd.to_numeric(ser)

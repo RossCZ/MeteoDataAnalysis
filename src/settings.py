@@ -13,6 +13,7 @@ class GeneralSettings:
     db_out_file: Path
     is_air: bool = False
     cumulative_plots: bool = True
+    yearly_plots: bool = True
 
 
 @dataclass
@@ -44,17 +45,18 @@ class Resamples(Enum):
     Y = ResampleSettings("YE", "Yearly", "Y")
 
 
+class MeteoChannels(Enum):
+    Tout = ChannelSettings("field1", "Temperature out", Labels.T.value, "red")
+    Pressure = ChannelSettings("field2", "Air pressure", Labels.P.value, "magenta")
+    Tbalc = ChannelSettings("field3", "Temperature balcony", Labels.T.value, "red")
+    TinL = ChannelSettings("field4", "Temperature living room", Labels.T.value, "red")
+    TinB = ChannelSettings("field5", "Temperature bedroom", Labels.T.value, "red")
+    HinL = ChannelSettings("field6", "Humidity living room", Labels.H.value, "blue")
+    HinB = ChannelSettings("field7", "Humidity bedroom", Labels.H.value, "blue")
+
+
 INDEX_COL = "created_at"
 
-CHANNELS_METEO = [
-    ChannelSettings("field1", "Temperature out", Labels.T.value, "red"),
-    ChannelSettings("field2", "Air pressure", Labels.P.value, "magenta"),
-    ChannelSettings("field3", "Temperature balcony", Labels.T.value, "red"),
-    ChannelSettings("field4", "Temperature living room", Labels.T.value, "red"),
-    ChannelSettings("field5", "Temperature bedroom", Labels.T.value, "red"),
-    ChannelSettings("field6", "Humidity living room", Labels.H.value, "blue"),
-    ChannelSettings("field7", "Humidity bedroom", Labels.H.value, "blue"),
-]
 
 CHANNELS_AIR = [
     ChannelSettings("field1", "BrnL PM10", Labels.PM.value, "red"),

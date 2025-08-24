@@ -6,7 +6,7 @@ import requests
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib import dates
-from settings import INDEX_COL, CHANNELS_METEO
+from settings import INDEX_COL, MeteoChannels
 from processor import DataProcessor, DataCleaner
 
 
@@ -32,7 +32,7 @@ def api_read():
                 print(df)
 
                 # visualize
-                ch_settings = CHANNELS_METEO[0]
+                ch_settings = MeteoChannels.Tout.value
                 df_plot = df[ch_settings.channel_key].dropna()
                 plt.figure(figsize=(15, 8))
                 plt.plot(df_plot, color=ch_settings.color, marker="o")
@@ -57,10 +57,11 @@ def validate_std():
         if year != 2019:
             continue
 
-        df_year = DataProcessor.get_year_dataframe(year, df_main)
+        df_year = DataProcessor.slice_year(year, df_main)
 
-        for channel in CHANNELS_METEO:
-            if channel.channel_key != "field3":
+        for e in MeteoChannels:
+            channel = e.value
+            if channel.channel_key != MeteoChannels.Tbalc.value.channel_key:
                 continue
 
             df = df_year[[channel.channel_key]]
@@ -91,7 +92,7 @@ def data_exploration_1():
     data_file = Path("0_Data", "feeds_meteo.csv")
     date_start, date_end = "2021-06-09", "2021-06-24"
     resample = "H"
-    out_ch, in_ch, in_ch_b = CHANNELS_METEO[0], CHANNELS_METEO[3], CHANNELS_METEO[4]  # field 1, 4, 5
+    out_ch, in_ch, in_ch_b = MeteoChannels.Tout.value, MeteoChannels.TinL.value, MeteoChannels.TinB.value  # field 1, 4, 5
     is_air = False
 
     df = DataProcessor.load_file(data_file, INDEX_COL)
